@@ -1,61 +1,40 @@
 import requests
+from bs4 import BeautifulSoup
 import json
+url = 'https://spb.hh.ru/search/vacancy?text=python&area=1&area=2'
+keywords = ['Django', 'Flask']
+headers = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/58.0.3029.110 ',
+}
+response = requests.get(url, headers=headers)
 
-def get_vacancies():
-    vacancies = []
-    page = 0
-    per_page = 100  # Количество вакансий на одной странице
-
-    while True:
-        # Задаем параметры поиска
-        params = {
-            'text': 'Python',
-            'area': [1, 2],  # 1 - Москва, 2 - Санкт-Петербург
-            'search_field': 'name',
-            'only_with_salary': True,
-            'currency': 'RUR',
-            'specialization': 1,  # Программирование, Разработка
-            'page': page,
-            'per_page': per_page
-        }
-
-        # Отправляем GET-запрос на сайт HeadHunter
-        response = requests.get('https://api.hh.ru/vacancies', params=params)
-        if response.status_code == 200:
-            vacancies_data = response.json()
-            items = vacancies_data.get('items', [])
-            vacancies.extend(items)
-            if len(items) < per_page:
-                break  # Выход из цикла, если получены не все вакансии
-            else:
-                page += 1
-        else:
-            print("Failed to retrieve vacancies")
-            break
-
-    print(f"Total vacancies found: {len(vacancies)}")
-    return vacancies
-
-def parse_vacancies(vacancies):
-    parsed_vacancies = []
+if response.status_code == 200:
+    html = response.text
+    soup = BeautifulSoup(html, 'html.parser')
+    vacancies = soup.find_all(class_='vacancy-serp-item')
+    results = []
     for vacancy in vacancies:
-        title = vacancy.get('name', '').lower()  # Преобразуем заголовок в нижний регистр для удобства сравнения
-        if 'django' in title or 'flask' in title:
-            parsed_vacancy = {
-                'title': title,
-                'company': vacancy.get('employer', {}).get('name', ''),
-                'city': vacancy.get('area', {}).get('name', ''),
-                'salary': vacancy.get('salary', {}),
-                'url': vacancy.get('url', '')
+        link = vacancy.find('a', class_='bloko-link')['href']
+        company = vacancy.find('a', class_='bloko-link').text
+        city = vacancy.find(class_='vacancy-serp-item__meta-info').text
+        salary = vacancy.find(class_='vacancy-serp-item__compensation')
+        if salary:
+            salary = salary.text.strip()
+        else:
+            salary = 'Не указана'
+        description = vacancy.find(class_='g-user-content').text
+        if any(keyword.lower() in description.lower() for keyword in keywords):
+            vacancy_info = {
+                'link': link,
+                'company': company,
+                'city': city,
+                'salary': salary
             }
-            parsed_vacancies.append(parsed_vacancy)
-    return parsed_vacancies
+            results.append(vacancy_info)
 
-def main():
-    vacancies = get_vacancies()
-    parsed_vacancies = parse_vacancies(vacancies)
-    with open('vacancies.json', 'w', encoding='utf-8') as f:
-        json.dump(parsed_vacancies, f, ensure_ascii=False, indent=4)
+    with open('vacancies.json', 'w', encoding='utf-8') as file:
+        json.dump(results, file, ensure_ascii=False, indent=4)
 
-if __name__ == "__main__":
-    main()
+    print('Результаты сохранены в файле vacancies.json.')
+else:
+    print('Ошибка при выполнении запроса.')
